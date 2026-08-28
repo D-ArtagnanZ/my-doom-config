@@ -362,6 +362,7 @@ Strict rules:
 (setq-default c-ts-mode-indent-offset 2)
 
 (after! corfu
+  (setq corfu-preselect 'first)
   (map! :map corfu-map
         "C-n" nil
         "C-p" nil
