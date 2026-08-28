@@ -362,37 +362,12 @@ Strict rules:
 (setq-default c-ts-mode-indent-offset 2)
 
 (after! corfu
-  (defun my/corfu-tab-or-yas ()
-    "Jump to next yasnippet field if active, otherwise insert corfu candidate."
-    (interactive)
-    (if (and (bound-and-true-p yas-minor-mode)
-             (yas-active-snippets))
-        (yas-next-field-or-maybe-expand)
-      (corfu-insert)))
-
-  (defun my/corfu-shift-tab-or-yas ()
-    "Jump to previous yasnippet field if active."
-    (interactive)
-    (if (and (bound-and-true-p yas-minor-mode)
-             (yas-active-snippets))
-        (yas-prev-field)
-      (ignore)))
-
   (map! :map corfu-map
-        ;; Restore default C-n and C-p cursor movement
         "C-n" nil
         "C-p" nil
-
-        ;; Restore default RET behavior (newline)
         "RET" nil
         "<return>" nil
-
-        ;; Bind M-n and M-p to navigate completion candidates
         "M-n" #'corfu-next
         "M-p" #'corfu-previous
-
-        ;; Use smart TAB for snippet jumping or candidate insertion
-        "TAB" #'my/corfu-tab-or-yas
-        "<tab>" #'my/corfu-tab-or-yas
-        "S-TAB" #'my/corfu-shift-tab-or-yas
-        "<backtab>" #'my/corfu-shift-tab-or-yas))
+        "TAB" #'corfu-insert
+        "<tab>" #'corfu-insert))
