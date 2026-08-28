@@ -74,6 +74,11 @@
 ;; You can also try 'gd' (or 'C-c c d') to jump to their definition and see how
 ;; they are implemented.
 
+(setq doom-font (font-spec :family "JetBrainsMono NFM" :size 16 :weight 'regular)
+      doom-big-font (font-spec :family "JetBrainsMono NFM" :size 24)
+      doom-variable-pitch-font (font-spec :family "Segoe UI" :size 16)
+      doom-symbol-font (font-spec :family "Segoe UI Symbol" :size 16))
+
 (map! :g "M-0" #'treemacs-select-window)
 
 (add-to-list 'auto-mode-alist '("\\.cppm\\'" . c++-mode))
@@ -126,30 +131,268 @@
 (set-frame-parameter nil 'alpha-background 80)
 (add-to-list 'default-frame-alist '(alpha-background . 80))
 
+;;; GPTel configuration with Org-mode default and Magit commit generator
+
+;; Core GPTel setup
 (use-package! gptel
+  :bind (("C-<f12>"   . gptel)
+         ("C-M-<f12>" . gptel-menu)
+         ("C-c a f"   . gptel-add-file)
+         ("C-c a a"   . gptel-add))
+  :hook (gptel-mode . gptel-highlight-mode)
   :config
-  (setq gptel-model 'deepseek-chat
-        gptel-backend (gptel-make-openai "DeepSeek"
-                                         :host "api.deepseek.com"
-                                         :endpoint "/chat/completions"
-                                         :stream t
-                                         :key (lambda () (getenv "DEEPSEEK_API_KEY"))
-                                         :models '(deepseek-chat deepseek-coder)))
+  (setq gptel-default-mode 'markdown-mode
+        gptel-model 'glm-5.2
+        gptel-max-tokens 65536
+        gptel-include-reasoning 'ignore
+        gptel-backend (gptel-make-openai "CXMT"
+                        :protocol "http"
+                        :host "agi-gateway.cxmt.com"
+                        :endpoint "/token/v1/chat/completions"
+                        :stream t
+                        :key 'gptel-api-key
+                        :models '(glm-5.2
+                                  deepseek-v4-pro-fp4
+                                  kimi-k2.6-cloud
+                                  deepseek-v4-flash))))
 
-
-  ;; (setq gptel-model 'gpt-4o
-  ;;       gptel-api-key (lambda () (getenv "OPENAI_API_KEY")))
-
-  ;; (setq gptel-backend (gptel-make-ollama "Ollama"
-  ;;                       :host "localhost:11434"
-  ;;                       :stream t
-  ;;                       :models '(deepseek-r1:latest qwen2.5-coder:latest)))
-
-  (setq gptel-default-mode 'org-mode))
-
-(use-package! gptel-magit
-  :after (magit gptel)
+;; Prompts management
+(use-package! gptel-prompts
+  :load-path "~/.emacs.d/site-lisp/gptel-prompts"
+  :after gptel
   :config
+  (gptel-prompts-update)
+  (gptel-prompts-add-update-watchers)
+  (when-let ((prompt (cdr (assoc 'cpp-code-rule gptel-directives))))
+    (setq gptel-system-prompt prompt)))
+
+;; Streamlined Magit commit message generator
+(defun my/gptel-magit-commit-message ()
+  "Generate a conventional commit message from staged changes."
+  (interactive)
+  (require 'gptel)
+  (let ((diff (magit-git-output "diff" "--staged"))
+        (buf (current-buffer)))
+    (when (string-empty-p diff)
+      (setq diff (magit-git-output "diff" "HEAD~1")))
+    (if (string-empty-p diff)
+        (user-error "No changes to generate commit message")
+      (message "GPTel: Generating commit message...")
+      (gptel-request
+       (format "Write a concise Conventional Commit message for the diff below. Output ONLY the message:\n\n%s" diff)
+       :system "You are an expert developer. Generate concise conventional commit messages."
+       :callback
+       (lambda (resp _info)
+         (when-let* ((text (if (consp resp) (cdr resp) resp))
+                     (clean (string-trim (replace-regexp-in-string "^```\\(?:git\\Vert{}commit\\)?\n?\\|```$" "" text))))
+           (with-current-buffer buf
+             (save-excursion
+               (goto-char (point-min))
+               (insert clean "\n\n"))
+             (message "GPTel: Commit message generated!"))))))))
+
+(after! git-commit
+  ;; Disable redundant flycheck in git commit message buffers
+  (add-hook 'git-commit-mode-hook (lambda () (flycheck-mode -1)))
   (map! :map git-commit-mode-map
         :localleader
-        "g" #'gptel-magit-generate-message))
+        "g" #'my/gptel-magit-commit-message))
+
+(setq package-archives '(("gnu"    . "https://mirrors.tuna.tsinghua.edu.cn/elpa/gnu/")
+                         ("nongnu" . "https://mirrors.tuna.tsinghua.edu.cn/elpa/nongnu/")
+                         ("melpa"  . "https://mirrors.tuna.tsinghua.edu.cn/elpa/melpa/")))
+
+(setq package-check-signature nil)
+
+(after! tramp
+  (setq tramp-default-method "scpx")
+  (setq remote-file-name-inhibit-cache nil
+	tramp-completion-reread-directory-timeout 120)
+  (setq tramp-verbose 1)
+  (setq tramp-use-ssh-controlmaster-options nil
+	tramp-chunksize 2028)
+  (setq vc-ignore-dir-regexp
+	(format "%s\\|%s"
+		vc-ignore-dir-regexp
+		tramp-file-name-regexp))
+  (setq backup-directory-alist `((".*" . ,temporary-file-directory)))
+  (setq auto-save-file-name-transforms `((".*" , temporary-file-directory t))))
+
+(setq straight-check-for-modifications nil
+      straight-vc-git-auto-fast-forward nil
+      straight-offline-p t)
+
+(after! emojify
+  (setq emojify-display-style 'unicode)
+  (setq emojify-download-emojis-p nil)
+  (set-fontset-font t 'emoji (font-spec :family "Segoe UI Emoji") nil 'prepend))
+
+(require 'advice)
+
+(after! persp-mode
+  (setq persp-auto-save-opt 1
+        persp-auto-save-persp-file (expand-file-name "persp-auto-save" doom-cache-dir)))
+
+;; Frame geometry persistence with support for Windows coordinate list specs
+(defvar my/frame-geometry-file (expand-file-name "frame-geometry" doom-cache-dir))
+
+(defun my/sanitize-frame-pos (pos)
+  "Convert frame coordinate specifications like (+ -8) or numbers into safe integers."
+  (let ((val (cond
+              ((numberp pos) pos)
+              ((and (consp pos) (numberp (cadr pos))) (cadr pos))
+              (t 0))))
+    (max 0 val)))
+
+(defun my/save-frame-geometry ()
+  "Save frame dimensions, sanitized coordinates, and fullscreen status on exit."
+  (with-temp-file my/frame-geometry-file
+    (prin1 (list (frame-parameter nil 'width)
+                 (frame-parameter nil 'height)
+                 (my/sanitize-frame-pos (frame-parameter nil 'top))
+                 (my/sanitize-frame-pos (frame-parameter nil 'left))
+                 (frame-parameter nil 'fullscreen))
+           (current-buffer))))
+
+(defun my/restore-frame-geometry ()
+  "Restore frame geometry on startup."
+  (when (file-readable-p my/frame-geometry-file)
+    (with-temp-buffer
+      (insert-file-contents my/frame-geometry-file)
+      (pcase (ignore-errors (read (current-buffer)))
+        (`(,w ,h ,top ,left ,fs)
+         (when (and (numberp w) (numberp h))
+           (set-frame-size (selected-frame) w h))
+         (when (and (numberp top) (numberp left))
+           (set-frame-position (selected-frame) left top))
+         (when fs
+           (set-frame-parameter (selected-frame) 'fullscreen fs)))))))
+
+(add-hook 'kill-emacs-hook #'my/save-frame-geometry)
+(add-hook 'doom-init-ui-hook #'my/restore-frame-geometry)
+
+;; Windows I/O performance and process spawning optimizations
+(when (eq system-type 'windows-nt)
+  (setq w32-pipe-read-delay 0
+        w32-pipe-buffer-size (* 64 1024)
+        vc-handled-backends '(Git)
+        auto-revert-check-vc-info nil
+        vc-follow-symlinks nil))
+
+(after! ispell
+  (setenv "DICTIONARY" "en_US")
+  (setenv "DICPATH" "MSYS2_HOME/ucrt64/share/hunspell")
+  (setq ispell-program-name "hunspell"
+        ispell-default-dictionary "en_US"
+        ispell-current-dictionary "en_US"
+        ispell-dictionary-alist
+        '((nil       "[[:alpha:]]" "[^[:alpha:]]" "[']" nil ("-d" "en_US") nil utf-8)
+          ("default" "[[:alpha:]]" "[^[:alpha:]]" "[']" nil ("-d" "en_US") nil utf-8)
+          ("en_US"   "[[:alpha:]]" "[^[:alpha:]]" "[']" nil ("-d" "en_US") nil utf-8))))
+
+(global-visual-line-mode 1)
+(add-hook! '(prog-mode-hook text-mode-hook)
+           #'adaptive-wrap-prefix-mode)
+
+(map! :desc "Goto char index (origin)" "M-g C"   #'goto-char
+      :desc "Avy goto char"            "M-g c"   #'avy-goto-char
+      :desc "Avy goto 2 chars"         "M-g 2"   #'avy-goto-char-2
+      :desc "Avy goto char timer"      "M-g s"   #'avy-goto-char-timer
+      :desc "Avy goto char timer"      "M-g SPC" #'avy-goto-char-timer
+      :desc "Avy goto word"            "M-g w"   #'avy-goto-word-1
+      :desc "Avy goto line"            "M-g l"   #'avy-goto-line)
+
+(after! gptel
+  (map! "M-g a" #'gptel-add
+        "M-g f" #'gptel-add-file))
+
+(after! gptel-magit
+  (setq gptel-magit-commit-message-instructions
+        "You are an expert Git commit message generator.
+Based on the provided git diff, generate a concise and precise commit message following the Conventional Commits specification.
+
+Strict rules:
+1. Format: `<type>(<scope>): <short description>`
+2. Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert.
+3. Keep the first line under 72 characters.
+4. Output ONLY the raw commit message.
+5. DO NOT include any reasoning, thought process, explanations, markdown fences (```), or introductory phrases.
+6. The very first character of your response MUST be the start of the commit message."))
+
+(after! ace-window
+  (setq aw-keys '(?1 ?2 ?3 ?4 ?5 ?6 ?7 ?8 ?9 ?0))
+  (custom-set-faces!
+    '(aw-leading-char-face
+      :height 2.5
+      :weight bold
+      :foreground "#ff5555"))
+  (setq aw-background t))
+
+(after! apheleia
+  (setq apheleia-remote-algorithm 'remote))
+
+(after! tramp
+  (add-to-list 'tramp-remote-path 'tramp-own-remote-path))
+
+(setq major-mode-remap-alist
+      '((c-mode        . c-ts-mode)
+        (c++-mode      . c++-ts-mode)
+        (c-or-c++-mode . c-or-c++-ts-mode)))
+
+(dolist (pattern '("\\.\\(cpp\\|cxx\\|cc\\|c\\+\\+\\)\\'"
+                   "\\.\\(hpp\\|hxx\\|hh\\|h\\+\\+\\|tpp\\|txx\\|ipp\\|inl\\)\\'"
+                   "\\.\\(cppm\\|ixx\\|cxxm\\|ccm\\|c\\+\\+m\\|mxx\\|mpp\\)\\'"))
+  (add-to-list 'auto-mode-alist (cons pattern 'c++-ts-mode)))
+
+(add-to-list 'auto-mode-alist '("\\.c\\'" . c-ts-mode))
+(add-to-list 'auto-mode-alist '("\\.h\\'" . c-or-c++-ts-mode))
+
+(defun my/c-mode-setup ()
+  (apheleia-mode -1)
+  (set-buffer-file-coding-system 'utf-8-unix)
+  (add-hook 'before-save-hook #'eglot-format-buffer nil t))
+
+(add-hook! '(c-mode-hook c++-mode-hook c-ts-mode-hook c++-ts-mode-hook)
+           #'my/c-mode-setup)
+
+(after! eglot
+  (add-to-list 'eglot-ignored-server-capabilities :documentOnTypeFormattingProvider))
+
+(setq-default c-ts-mode-indent-style 'bsd)
+(setq-default c-ts-mode-indent-offset 2)
+
+(after! corfu
+  (defun my/corfu-tab-or-yas ()
+    "Jump to next yasnippet field if active, otherwise insert corfu candidate."
+    (interactive)
+    (if (and (bound-and-true-p yas-minor-mode)
+             (yas-active-snippets))
+        (yas-next-field-or-maybe-expand)
+      (corfu-insert)))
+
+  (defun my/corfu-shift-tab-or-yas ()
+    "Jump to previous yasnippet field if active."
+    (interactive)
+    (if (and (bound-and-true-p yas-minor-mode)
+             (yas-active-snippets))
+        (yas-prev-field)
+      (ignore)))
+
+  (map! :map corfu-map
+        ;; Restore default C-n and C-p cursor movement
+        "C-n" nil
+        "C-p" nil
+
+        ;; Restore default RET behavior (newline)
+        "RET" nil
+        "<return>" nil
+
+        ;; Bind M-n and M-p to navigate completion candidates
+        "M-n" #'corfu-next
+        "M-p" #'corfu-previous
+
+        ;; Use smart TAB for snippet jumping or candidate insertion
+        "TAB" #'my/corfu-tab-or-yas
+        "<tab>" #'my/corfu-tab-or-yas
+        "S-TAB" #'my/corfu-shift-tab-or-yas
+        "<backtab>" #'my/corfu-shift-tab-or-yas))
