@@ -32,7 +32,7 @@
 ;; There are two ways to load a theme. Both assume the theme is installed and
 ;; available. You can either set `doom-theme' or manually load a theme with the
 ;; `load-theme' function. This is the default:
-(setq doom-theme 'doom-one)
+(setq doom-theme 'doom-dark+)
 
 ;; This determines the style of line numbers in effect. If set to `nil', line
 ;; numbers are disabled. For relative line numbers, set this to `relative'.
@@ -210,7 +210,7 @@
 	tramp-completion-reread-directory-timeout 120)
   (setq tramp-verbose 1)
   (setq tramp-use-ssh-controlmaster-options nil
-	tramp-chunksize 2028)
+	tramp-chunksize 4096)
   (setq vc-ignore-dir-regexp
 	(format "%s\\|%s"
 		vc-ignore-dir-regexp
@@ -321,6 +321,7 @@ Strict rules:
 
 (after! ace-window
   (setq aw-keys '(?1 ?2 ?3 ?4 ?5 ?6 ?7 ?8 ?9 ?0))
+  (setq aw-scope 'visible)
   (custom-set-faces!
     '(aw-leading-char-face
       :height 2.5
@@ -356,9 +357,10 @@ Strict rules:
            #'my/c-mode-setup)
 
 (after! eglot
+  (setq eglot-events-buffer-size 10240)
   (add-to-list 'eglot-ignored-server-capabilities :documentOnTypeFormattingProvider))
 
-(setq-default c-ts-mode-indent-style 'bsd)
+(setq-default c-ts-mode-indent-style 'gnu)
 (setq-default c-ts-mode-indent-offset 2)
 
 (after! corfu
@@ -366,9 +368,34 @@ Strict rules:
   (map! :map corfu-map
         "C-n" nil
         "C-p" nil
+        [remap next-line] nil
+        [remap previous-line] nil
         "RET" nil
         "<return>" nil
+        "DEL" nil
+        "<backspace>" nil
         "M-n" #'corfu-next
         "M-p" #'corfu-previous
         "TAB" #'corfu-insert
         "<tab>" #'corfu-insert))
+
+(after! ligature
+  (setq ligature-composition-table nil)
+  (ligature-set-ligatures 'prog-mode
+                          '("|||>" "<|||" "<==>" "<!--" "####" "~~>" "***" "||=" "||>"
+                            ":::" "::=" "=:=" "===" "==>" "=!=" "=>>" "=<<" "=/=" "!=="
+                            "!!." ">=>" ">>>" ">>-" ">->" "->>" "-->" "---" "-<<"
+                            "<~~" "<~>" "<*>" "<||" "<|>" "<$>" "<==" "<=<" "<->"
+                            "<--" "<-<" "<<-" "<<<" "<+>" "</>" "###" "#_(" "..<"
+                            "..." "+++" "/==" "///" "_|_" "www" "&&" "^=" "~~" "~@" "~="
+                            "~>" "~-" "**" "*>" "*/" "||" "|}" "|]" "|=" "|>" "|-" "{|"
+                            "[|" "]#" "::" ":=" ":>" ":<" "$>" "==" "=>" "!=" "!!"
+                            ">=" ">>" ">-" "-~" "-|" "->" "--" "-<" "<~" "<*" "<|" "<:"
+                            "<$" "<=" "<>" "<-" "<<" "<+" "</" "#{" "#[" "#:" "#=" "#!"
+                            "##" "#(" "#?" "#_" "%%" ".=" ".-" ".." ".?" "+>" "++" "?:"
+                            "?=" "?." "??" ";;" "/*" "/>" "//" "__" "~~" "(*" "*)" "<=>"
+                            "\\\\" "://")))
+
+
+
+;;; config.el ends here
